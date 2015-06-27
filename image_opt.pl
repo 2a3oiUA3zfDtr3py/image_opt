@@ -25,6 +25,9 @@ $report = $working_dir . '/' . &char_escape(getRandomCharacters(120) . ".txt");
 &execute_command("mkdir -p $working_dir");
 &execute_command("echo \"\" >> $report");
 
+if(!$parallel_quantity) {
+  $parallel_quantity++;
+}
 $pm = Parallel::ForkManager->new($parallel_quantity);
 $directories_to_search = './';
 find(sub {
