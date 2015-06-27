@@ -7,14 +7,25 @@ use File::Find;
 use Parallel::ForkManager;
 
 setpriority(0, 0, 19);
-my ($pm,$directories_to_search,$working_dir,$solt,$report,$report_str);
+my ($pm,$parallel_quantity,$directories_to_search,$working_dir,$solt,$report,$report_str);
+$parallel_quantity = &execute_command("cat /proc/cpuinfo 2>&1 | grep processor | wc -l") + 0;
+if(@ARGV == 1) {
+  if($ARGV[0] =~ /^[1-9][0-9]*$/) {
+    $parallel_quantity = $ARGV[0] + 0;
+  } else {
+    exit;
+  }
+}elsif(@ARGV != 0) {
+  exit;
+}
+
 $solt = getRandomCharacters(180);
 $working_dir = &char_escape("/dev/shm/" . getRandomCharacters(120));
 $report = $working_dir . '/' . &char_escape(getRandomCharacters(120) . ".txt");
 &execute_command("mkdir -p $working_dir");
 &execute_command("echo \"\" >> $report");
 
-$pm = Parallel::ForkManager->new(1);
+$pm = Parallel::ForkManager->new($parallel_quantity);
 $directories_to_search = './';
 find(sub {
   $pm->start and return;
@@ -134,7 +145,7 @@ sub getStringHash {
   my ($temp,$escaped_str);
   $escaped_str = &char_escape($str);
   $temp = '';
-  open(IN,"echo \"$escaped_str\" | sha256sum |");
+  open(IN,"echo \"$escaped_str\" | sha512sum |");
   while(<IN>)
   {
     $temp .= $_;
