@@ -7,16 +7,30 @@ use File::Find;
 use Parallel::ForkManager;
 
 setpriority(0, 0, 19);
-my ($pm,$parallel_quantity,$directories_to_search,$working_dir,$solt,$report,$report_str);
+my ($pm,$parallel_quantity,$directories_to_search,$working_dir,$solt,$report,$report_str,$i,$jpegtran_options,$jpeg_optimize_flag);
 $parallel_quantity = &execute_command("cat /proc/cpuinfo 2>&1 | grep processor | wc -l") + 0;
-if(@ARGV == 1) {
-  if($ARGV[0] =~ /^[1-9][0-9]*$/) {
-    $parallel_quantity = $ARGV[0] + 0;
+$jpegtran_options = '-arithmetic';
+$jpeg_optimize_flag = 0;
+my ($P_jpegoptim,$P_removeapp0,$P_jpegtran,$P_optipng,$P_convert,$P_gif2apng,$P_apng2gif,$P_zopflipng,$P_advpng);
+$P_jpegoptim  = 'jpegoptim';
+$P_removeapp0 = 'removeapp0';
+$P_jpegtran   = 'jpegtran';
+$P_optipng    = 'optipng';
+$P_convert    = 'convert';
+$P_gif2apng   = 'gif2apng';
+$P_apng2gif   = 'apng2gif';
+$P_zopflipng  = 'zopflipng';
+$P_advpng     = 'advpng';
+
+for($i = 0;$i < @ARGV;$i++) {
+  if($ARGV[$i] =~ /^-([1-9][0-9]*)$/) {
+    $parallel_quantity = $1 + 0;
+  } elsif($ARGV[$i] =~ /^-no$/) {
+    $jpegtran_options = '';
+    $jpeg_optimize_flag = 1;
   } else {
     exit;
   }
-}elsif(@ARGV != 0) {
-  exit;
 }
 
 $solt = getRandomCharacters(180);
@@ -41,19 +55,21 @@ find(sub {
     $temp_file[1] = $working_dir . '/' . $temp_file[0] . '.jpg';
     $temp_file[2] = $working_dir . '/' . &getStringHash($temp_file[0] . $solt) . '.jpg';
     &execute_command("cp ./$file $temp_file[1] ");
-    &execute_command("jpegoptim --strip-all --all-normal -f $temp_file[1]");
+    &execute_command("$P_jpegoptim --strip-all --all-normal -f $temp_file[1]");
     &execute_command("cp $temp_file[1] $temp_file[2]");
     $hash[0] = &getImageHash($temp_file[1]);
-    &execute_command("removeapp0 $temp_file[1]");
-    &execute_command("jpegoptim --strip-all --all-progressive -f $temp_file[1]");
+    &execute_command("$P_removeapp0 $temp_file[1]");
+    &execute_command("$P_jpegtran -arithmetic -outfile $temp_file[1] $temp_file[1]");
     $hash[1] = &getImageHash($temp_file[1]);
-    if($hash[0] eq $hash[1]) {
-      &execute_command("moz_jpegtran -arithmetic -outfile $temp_file[1] $temp_file[1]");
-      &execute_command("removeapp0 $temp_file[1]");
+    if($hash[0] eq $hash[1] && $jpeg_optimize_flag == 1) {
+      &execute_command("$P_jpegoptim --strip-all --all-normal -f $temp_file[1]");
+      &execute_command("$P_jpegtran -outfile $temp_file[1] $temp_file[1]");
+    } elsif($hash[0] eq $hash[1] && $jpeg_optimize_flag == 0) {
+      &execute_command("$P_removeapp0 $temp_file[1]");
     } else {
       &execute_command("rm $temp_file[1]");
       &execute_command("cp $temp_file[2] $temp_file[1]");
-      &execute_command("moz_jpegtran -arithmetic -outfile $temp_file[1] $temp_file[1]");
+      &execute_command("$P_jpegtran $jpegtran_options -outfile $temp_file[1] $temp_file[1]");
     }
     &execute_command("rm $temp_file[2]");
     &execute_command("cp $temp_file[1] ./$file");
@@ -62,22 +78,24 @@ find(sub {
     $temp_file[1] = $working_dir . '/' . $temp_file[0] . '.png';
     $temp_file[2] = $working_dir . '/' . &getStringHash($temp_file[0] . $solt) . '.pam';
     &execute_command("cp ./$file $temp_file[1]");
-    if (&execute_command("optipng -snip -simulate -o0 $temp_file[1] 2>&1 | head -n 2 | sed -e \"1d\"") !~ /^Importing APNG.*$/) {
-      &execute_command("convert $temp_file[1] $temp_file[2]");
+    if (&execute_command("$P_optipng -snip -simulate -o0 $temp_file[1] 2>&1 | head -n 2 | sed -e \"1d\"") !~ /^Importing APNG.*$/) {
+      &execute_command("$P_convert $temp_file[1] $temp_file[2]");
       &execute_command("rm $temp_file[1]");
-      &execute_command("convert $temp_file[2] $temp_file[1]");
+      &execute_command("$P_convert $temp_file[2] $temp_file[1]");
       &execute_command("rm $temp_file[2]");
       if(&optimize_png($temp_file[1])) {
         &execute_command("echo \"zopflipng $file\" >> $report");
       }
       &execute_command("cp $temp_file[1] ./$file");
+    } else {
+      &execute_command("echo \"APNG $file\" >> $report");
     }
     &execute_command("rm $temp_file[1]");
   } elsif ($mime =~ /^image\/x-portable-(bit|gray|any|pix)map.*$/ || $mime =~ /^image\/(bmp|tiff|x-tiff).*$/) {
     if($file_name_length < 200) {
       $temp_file[1] = $working_dir . '/' . $temp_file[0] . '.png';
       $temp_file[2] = $file . &char_escape(&getRandomCharacters(32) . '.png');
-      &execute_command("convert -set colorspace RGB ./$file $temp_file[1]");
+      &execute_command("$P_convert -set colorspace RGB ./$file $temp_file[1]");
       if(&optimize_png($temp_file[1])) {
         &execute_command("echo \"zopflipng $file\" >> $report");
       }
@@ -90,8 +108,8 @@ find(sub {
     $temp_file[1] = $temp_file[0] . '.png';
     $temp_file[2] = $temp_file[0] . '.gif';
     &execute_command("cp ./$file $temp_file[2]");
-    &execute_command("gif2apng $temp_file[2]");
-    &execute_command("apng2gif $temp_file[1]");
+    &execute_command("$P_gif2apng $temp_file[2]");
+    &execute_command("$P_apng2gif $temp_file[1]");
     &execute_command("rm $temp_file[1]");
     &execute_command("rm ./$file");
     &execute_command("cp $temp_file[2] ./$file");
@@ -115,16 +133,16 @@ sub optimize_png {
     $return_code = 0;
     $temp_file = $working_dir . '/' . &char_escape(&getStringHash($target_file . 'optimize_png' . $solt) . '.png');
 
-    &execute_command("optipng -zc9 -zm9 -zs0-3 -f0-5 -zw32k -strip all $target_file");
+    &execute_command("$P_optipng -zc9 -zm9 -zs0-3 -f0-5 -zw32k -strip all $target_file");
     &execute_command("cp $target_file $temp_file");
     $hash[0] = &getImageHash($target_file);
-    &execute_command("zopflipng -y --iterations=5 --splitting=3 --filters=p $target_file $target_file");
+    &execute_command("$P_zopflipng -y --iterations=15 --splitting=3 --filters=empb $target_file $target_file");
 #    &execute_command("pngout-static -n0 -k1 -f6 -force $target_file");
     $hash[1] = &getImageHash($target_file);
     if($hash[0] ne $hash[1]) {
         &execute_command("rm $target_file");
         &execute_command("cp $temp_file $target_file");
-        &execute_command("advdef -z -4 -i 5 $target_file");
+        &execute_command("$P_advpng -z -4 -i 5 $target_file");
         $return_code = 127;
     }
     &execute_command("rm $temp_file");
@@ -135,7 +153,7 @@ sub getImageHash {
   my ($file) = @_;
   my ($temp,$temp_file);
   $temp_file = $working_dir . '/' . &char_escape(&getStringHash($file . 'getImageHash' . $solt) . '.rgba');
-  &execute_command("convert $file -set colorspace sRGB  -type TrueColorMatte $temp_file");
+  &execute_command("$P_convert $file -set colorspace sRGB  -type TrueColorMatte $temp_file");
   $temp = &execute_command("sha512sum $temp_file");
   &execute_command("rm $temp_file");
   $temp =~ s"\n" "g;
